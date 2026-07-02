@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     # Skip list — these paths are never rate limited
     skip_paths: list[str] = ["/health", "/metrics", "/docs", "/openapi.json", "/redoc", "/static"]
 
+    # CORS — comma-separated list of allowed frontend origins
+    cors_origins: str = "http://localhost:5173,http://localhost:3000,http://localhost:8080"
+
     # Static whitelists / blacklists (comma-separated, loaded at startup)
     whitelist_ips: str = ""
     blacklist_ips: str = ""
@@ -54,6 +57,9 @@ class Settings(BaseSettings):
 
     def get_blacklist_ips(self) -> list[str]:
         return [ip.strip() for ip in self.blacklist_ips.split(",") if ip.strip()]
+
+    def get_cors_origins(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

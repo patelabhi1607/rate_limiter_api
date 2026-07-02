@@ -1,21 +1,35 @@
 services:
-  api:
-    build: .
+  backend:
+    build: ./backend
     ports:
       - "8000:8000"
-    env_file: .env
     environment:
-      # Override .env's localhost values — inside the container the DB and
-      # cache are reached by their compose service names, not localhost.
+      # Containers reach each other by service name, never localhost.
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
+      ADMIN_API_KEY: ${ADMIN_API_KEY}
+      # Allow the frontend container origin (and local dev) through CORS.
+      CORS_ORIGINS: http://localhost:8080,http://localhost:5173,http://localhost:3000
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    volumes:
-      - .:/app
+    restart: unless-stopped
+    networks:
+      - rate_limiter_net
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Baked into the JS bundle at build time — the browser (not the
+        # container) calls the backend, so this is the host-published URL.
+        VITE_API_URL: ${VITE_API_URL}
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
     restart: unless-stopped
     networks:
       - rate_limiter_net

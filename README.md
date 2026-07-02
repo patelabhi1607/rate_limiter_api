@@ -26,25 +26,52 @@ All algorithms are implemented as **Lua scripts** executed atomically inside Red
 - **Audit logging** to PostgreSQL (async, non-blocking via `asyncio.create_task`)
 - **Multi-stage Docker build** + Docker Compose for one-command start
 
+## Architecture
+
+Decoupled frontend + backend, each in its own container:
+
+```
+rate_limiter_api/
+├── backend/            FastAPI + Redis + PostgreSQL (the rate limiter)
+├── frontend/           React + TypeScript dashboard (Vite, served by nginx)
+├── docker-compose.yml  Orchestrates backend, frontend, postgres, redis, prometheus
+└── prometheus.yml
+```
+
+The React app calls the backend over HTTP (CORS-enabled); the backend exposes the
+`X-RateLimit-*` headers so the browser can read them.
+
 ## Quick Start
 
 ```bash
 cp .env.example .env
-docker-compose up
+docker compose up --build
 ```
 
-API available at `http://localhost:8000`. Prometheus at `http://localhost:9090`.
+| Service | URL |
+|---|---|
+| **Dashboard (React UI)** | http://localhost:8080 |
+| Backend API | http://localhost:8000 |
+| API docs (Swagger) | http://localhost:8000/docs |
+| Prometheus | http://localhost:9090 |
 
 ## Interactive Dashboard
 
-Open **`http://localhost:8000/`** for a live demo dashboard where you can fire
-single or burst requests at each demo endpoint and watch requests get allowed
-(green) or blocked (red) in real time, with the live `X-RateLimit-*` headers and
-a quota bar.
+The dashboard (http://localhost:8080) lets you fire single or burst requests at
+each demo endpoint and watch them get allowed (green) or blocked (red) in real
+time, with the live `X-RateLimit-*` headers and a quota bar.
 
-The dashboard also runs **standalone** — if no backend is reachable it falls back
-to a client-side simulator implementing the same four algorithms in JavaScript, so
-the page works even when hosted as a static file.
+It also runs **standalone** — if no backend is reachable it falls back to a
+client-side simulator implementing the same four algorithms in TypeScript, so the
+page works even when hosted as a static file.
+
+### Frontend dev mode
+
+```bash
+cd frontend
+npm install
+npm run dev          # http://localhost:5173, proxies to http://localhost:8000
+```
 
 ## Demo Endpoints
 
@@ -126,6 +153,7 @@ X-RateLimit-Retry-After: 17   ← only on 429
 ## Running Tests
 
 ```bash
+cd backend
 pip install -r requirements.txt
 
 # Unit tests (no containers)
@@ -153,15 +181,27 @@ locust -f tests/load/locustfile.py --host http://localhost:8000 \
 ## Project Structure
 
 ```
-app/
-  algorithms/        Token bucket, sliding window, fixed window, leaky bucket
-  api/               demo, admin, metrics, health routers
-  core/              config, redis client, Lua scripts, IP utils
-  db/                SQLAlchemy models, async session, Alembic migrations
-  middleware/        RateLimitMiddleware (enforcement)
-  schemas/           Pydantic request/response models
-tests/
-  unit/              Fast tests, mocked Redis
-  integration/       Full HTTP tests with testcontainers
-  load/              Locust load scenarios
+backend/
+  app/
+    algorithms/      Token bucket, sliding window, fixed window, leaky bucket
+    api/             demo, admin, metrics, health routers
+    core/            config, redis client, Lua scripts, IP utils
+    db/              SQLAlchemy models, async session, Alembic migrations, seed
+    middleware/      RateLimitMiddleware (enforcement) + CORS
+    schemas/         Pydantic request/response models
+  tests/
+    unit/            Fast tests, mocked Redis
+    integration/     Full HTTP tests with testcontainers
+    load/            Locust load scenarios
+  Dockerfile         Backend image (multi-stage)
+frontend/
+  src/
+    components/      Controls, LiveStatus, RequestLog
+    api.ts           Backend client + CORS-aware header parsing
+    simulator.ts     Client-side fallback (same 4 algorithms in TS)
+    endpoints.ts     Demo endpoint config (mirrors backend seed)
+    App.tsx          State + orchestration
+  Dockerfile         Node build → nginx serve
+  nginx.conf
+docker-compose.yml   backend + frontend + postgres + redis + prometheus
 ```
