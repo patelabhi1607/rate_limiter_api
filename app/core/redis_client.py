@@ -27,8 +27,13 @@ async def init_redis() -> None:
     )
 
     client = aioredis.Redis(connection_pool=_pool)
-    await _load_scripts(client)
-    logger.info("Redis pool initialized and Lua scripts loaded")
+    try:
+        await _load_scripts(client)
+        logger.info("Redis pool initialized and Lua scripts loaded")
+    except Exception:
+        # Don't crash startup if Redis is briefly unavailable — scripts are
+        # lazy-loaded on first use via the EVALSHA/NoScriptError fallback path.
+        logger.warning("Redis not reachable at startup; Lua scripts will load on first use")
 
 
 async def _load_scripts(client: aioredis.Redis) -> None:
@@ -65,9 +70,14 @@ async def evalsha_with_fallback(
     args: list[Any],
 ) -> list[Any]:
     """Run EVALSHA; reload script and retry once on NoScriptError."""
+    if algorithm not in LUA_SCRIPTS:
+        raise ValueError(f"Unknown algorithm: {algorithm}")
+
     sha = _script_shas.get(algorithm)
     if sha is None:
-        raise ValueError(f"Unknown algorithm: {algorithm}")
+        # Not preloaded (e.g. Redis was down at startup) — load it now.
+        sha = await client.script_load(LUA_SCRIPTS[algorithm])
+        _script_shas[algorithm] = sha
 
     try:
         return await client.evalsha(sha, len(keys), *keys, *args)

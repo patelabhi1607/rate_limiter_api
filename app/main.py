@@ -1,19 +1,26 @@
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.core.config import get_settings
 from app.core.redis_client import close_redis, init_redis
+from app.db.seed import seed_demo_rules
 from app.db.session import close_db
 
 logging.basicConfig(level=get_settings().log_level)
 logger = logging.getLogger(__name__)
 
+STATIC_DIR = Path(__file__).parent / "static"
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_redis()
+    await seed_demo_rules()
     logger.info("Rate Limiter API started")
     yield
     await close_redis()
@@ -46,6 +53,14 @@ def create_app() -> FastAPI:
         app.include_router(metrics_router)
     app.include_router(demo_router)
     app.include_router(admin_router)
+
+    # Serve the interactive demo dashboard at "/"
+    @app.get("/", include_in_schema=False)
+    async def dashboard():
+        return FileResponse(STATIC_DIR / "index.html")
+
+    if STATIC_DIR.exists():
+        app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
     return app
 

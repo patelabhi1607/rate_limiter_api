@@ -35,6 +35,17 @@ docker-compose up
 
 API available at `http://localhost:8000`. Prometheus at `http://localhost:9090`.
 
+## Interactive Dashboard
+
+Open **`http://localhost:8000/`** for a live demo dashboard where you can fire
+single or burst requests at each demo endpoint and watch requests get allowed
+(green) or blocked (red) in real time, with the live `X-RateLimit-*` headers and
+a quota bar.
+
+The dashboard also runs **standalone** — if no backend is reachable it falls back
+to a client-side simulator implementing the same four algorithms in JavaScript, so
+the page works even when hosted as a static file.
+
 ## Demo Endpoints
 
 ```

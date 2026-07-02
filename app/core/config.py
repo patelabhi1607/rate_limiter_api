@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     metrics_enabled: bool = True
 
     # Skip list — these paths are never rate limited
-    skip_paths: list[str] = ["/health", "/metrics", "/docs", "/openapi.json", "/redoc"]
+    skip_paths: list[str] = ["/health", "/metrics", "/docs", "/openapi.json", "/redoc", "/static"]
 
     # Static whitelists / blacklists (comma-separated, loaded at startup)
     whitelist_ips: str = ""

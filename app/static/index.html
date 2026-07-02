@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Rate Limiter API — Live Demo</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --panel-2: #1c2330;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --green: #3fb950;
+    --red: #f85149;
+    --blue: #58a6ff;
+    --yellow: #d29922;
+    --accent: #7c3aed;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.5;
+    padding: 24px;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 26px; font-weight: 700; }
+  h1 .tag { color: var(--accent); }
+  .subtitle { color: var(--muted); margin: 6px 0 24px; font-size: 14px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+  }
+  .panel h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin-bottom: 14px; }
+
+  label { font-size: 13px; color: var(--muted); display: block; margin-bottom: 6px; }
+  select, input {
+    width: 100%;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 9px 12px;
+    border-radius: 8px;
+    font-size: 14px;
+    margin-bottom: 14px;
+  }
+  .endpoint-desc { font-size: 12px; color: var(--muted); margin-top: -8px; margin-bottom: 14px; min-height: 32px; }
+
+  .btn-row { display: flex; gap: 10px; }
+  button {
+    flex: 1;
+    background: var(--accent);
+    color: white;
+    border: none;
+    padding: 11px 14px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity .15s;
+  }
+  button:hover { opacity: .88; }
+  button.secondary { background: var(--panel-2); border: 1px solid var(--border); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+
+  /* Quota bar */
+  .quota-wrap { margin: 4px 0 18px; }
+  .quota-labels { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px; }
+  .quota-bar { height: 14px; background: var(--panel-2); border-radius: 7px; overflow: hidden; border: 1px solid var(--border); }
+  .quota-fill { height: 100%; background: linear-gradient(90deg, var(--green), var(--yellow)); transition: width .3s ease, background .3s; border-radius: 7px; }
+
+  /* Stats */
+  .stats { display: flex; gap: 12px; margin-bottom: 18px; }
+  .stat { flex: 1; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; text-align: center; }
+  .stat .num { font-size: 24px; font-weight: 700; }
+  .stat .lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  .stat.allowed .num { color: var(--green); }
+  .stat.blocked .num { color: var(--red); }
+
+  /* Headers table */
+  .headers { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; }
+  .headers .row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border); }
+  .headers .row:last-child { border-bottom: none; }
+  .headers .k { color: var(--blue); }
+  .headers .v { color: var(--text); }
+
+  /* Log */
+  .log { max-height: 320px; overflow-y: auto; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; }
+  .log-item { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; margin-bottom: 4px; background: var(--panel-2); }
+  .log-item .code { font-weight: 700; min-width: 34px; }
+  .log-item.ok .code { color: var(--green); }
+  .log-item.blocked .code { color: var(--red); }
+  .log-item .path { color: var(--muted); flex: 1; }
+  .log-item .rem { color: var(--blue); }
+  .empty { color: var(--muted); font-size: 13px; text-align: center; padding: 20px; }
+
+  .footer { margin-top: 24px; text-align: center; color: var(--muted); font-size: 12px; }
+  .footer a { color: var(--blue); text-decoration: none; }
+</style>
+</head>
+<body>
+  <h1>Rate Limiter <span class="tag">API</span></h1>
+  <p class="subtitle">Interactive demo — fire requests and watch the limiter allow or block them in real time.</p>
+  <div id="modeBadge" style="display:inline-block;font-size:12px;padding:4px 10px;border-radius:6px;margin-bottom:20px;border:1px solid var(--border);color:var(--muted);">Checking backend…</div>
+
+  <div class="grid">
+    <!-- Left: controls -->
+    <div class="panel">
+      <h2>Send Requests</h2>
+
+      <label for="endpoint">Demo Endpoint</label>
+      <select id="endpoint">
+        <option value="/demo/public">/demo/public — 10/min per IP (sliding window)</option>
+        <option value="/demo/authenticated">/demo/authenticated — 100/min per user (token bucket)</option>
+        <option value="/demo/api-key">/demo/api-key — 50/min per key (fixed window)</option>
+        <option value="/demo/tiered">/demo/tiered — free=5 / pro=50 / enterprise=500</option>
+        <option value="/demo/burst">/demo/burst — token bucket, 2× burst</option>
+        <option value="/demo/strict">/demo/strict — leaky bucket, 1/sec</option>
+      </select>
+      <div class="endpoint-desc" id="endpointDesc"></div>
+
+      <label for="burstCount">Burst size</label>
+      <input type="number" id="burstCount" value="15" min="1" max="200" />
+
+      <div class="btn-row">
+        <button id="sendOne">Send 1 Request</button>
+        <button id="sendBurst" class="secondary">Send Burst</button>
+      </div>
+      <div class="btn-row" style="margin-top:10px;">
+        <button id="reset" class="secondary">Reset Stats</button>
+      </div>
+    </div>
+
+    <!-- Right: live status -->
+    <div class="panel">
+      <h2>Live Status</h2>
+
+      <div class="quota-wrap">
+        <div class="quota-labels">
+          <span>Remaining quota</span>
+          <span id="quotaText">— / —</span>
+        </div>
+        <div class="quota-bar"><div class="quota-fill" id="quotaFill" style="width:100%"></div></div>
+      </div>
+
+      <div class="stats">
+        <div class="stat allowed"><div class="num" id="statAllowed">0</div><div class="lbl">Allowed</div></div>
+        <div class="stat blocked"><div class="num" id="statBlocked">0</div><div class="lbl">Blocked</div></div>
+        <div class="stat"><div class="num" id="statTotal">0</div><div class="lbl">Total</div></div>
+      </div>
+
+      <h2 style="margin-top:6px;">Response Headers</h2>
+      <div class="headers" id="headers">
+        <div class="empty">Send a request to see rate-limit headers</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Log -->
+  <div class="panel" style="margin-top:20px;">
+    <h2>Request Log</h2>
+    <div class="log" id="log"><div class="empty">No requests yet</div></div>
+  </div>
+
+  <div class="footer">
+    Rate Limiter API &middot; FastAPI + Redis + PostgreSQL &middot;
+    <a href="/docs" target="_blank">API Docs</a> &middot;
+    <a href="/metrics" target="_blank">Metrics</a>
+  </div>
+
+<script>
+  const descriptions = {
+    "/demo/public": "No auth needed. Each unique IP gets 10 requests per minute. Sliding window prevents boundary bursts.",
+    "/demo/authenticated": "Sends a demo Bearer token. 100 req/min per user via token bucket — unused quota accumulates.",
+    "/demo/api-key": "Sends an X-API-Key header. 50 req/min per key using a fixed window that resets on the minute.",
+    "/demo/tiered": "Sends X-User-Tier: pro. Different tiers get different limits from the same rule.",
+    "/demo/burst": "Token bucket with 2× burst multiplier — allows a short spike above the steady rate.",
+    "/demo/strict": "Leaky bucket — drains at exactly 1 request/second, no bursts allowed."
+  };
+
+  // A fake (unsigned) JWT with sub=demo_user for the authenticated endpoint
+  const DEMO_JWT = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9." +
+                   "eyJzdWIiOiJkZW1vX3VzZXIiLCJyb2xlIjoicHJvIn0.demo_signature";
+
+  let allowed = 0, blocked = 0;
+  let backendLive = false;
+
+  const $ = (id) => document.getElementById(id);
+  const endpointSel = $("endpoint");
+
+  // ── Client-side simulator ─────────────────────────────────────────────
+  // Mirrors the seeded server rules so the page works as a standalone demo
+  // when no backend is running (e.g. hosted statically). Same algorithms.
+  const RULES = {
+    "/demo/public":        { algo: "sliding_window", limit: 10,  window: 60 },
+    "/demo/authenticated": { algo: "token_bucket",   limit: 100, window: 60 },
+    "/demo/api-key":       { algo: "fixed_window",   limit: 50,  window: 60 },
+    "/demo/tiered":        { algo: "sliding_window", limit: 50,  window: 60 }, // pro tier
+    "/demo/burst":         { algo: "token_bucket",   limit: 10,  window: 60, burst: 2.0 },
+    "/demo/strict":        { algo: "leaky_bucket",   limit: 1,   window: 1 }
+  };
+  const simState = {};  // per-endpoint algorithm state
+
+  function nowSec() { return Date.now() / 1000; }
+
+  function simulate(path) {
+    const r = RULES[path];
+    const now = nowSec();
+    let st = simState[path];
+
+    if (r.algo === "sliding_window") {
+      st = st || (simState[path] = { hits: [] });
+      st.hits = st.hits.filter(t => t > now - r.window);
+      if (st.hits.length < r.limit) {
+        st.hits.push(now);
+        return { status: 200, limit: r.limit, remaining: r.limit - st.hits.length, reset: Math.ceil(now + r.window) };
+      }
+      const retry = Math.ceil(st.hits[0] + r.window - now);
+      return { status: 429, limit: r.limit, remaining: 0, reset: Math.ceil(now + retry), retry };
+    }
+
+    if (r.algo === "fixed_window") {
+      const boundary = Math.floor(now / r.window) * r.window + r.window;
+      st = simState[path];
+      if (!st || st.boundary !== boundary) st = simState[path] = { boundary, count: 0 };
+      if (st.count < r.limit) {
+        st.count++;
+        return { status: 200, limit: r.limit, remaining: r.limit - st.count, reset: Math.ceil(boundary) };
+      }
+      return { status: 429, limit: r.limit, remaining: 0, reset: Math.ceil(boundary), retry: Math.ceil(boundary - now) };
+    }
+
+    if (r.algo === "token_bucket") {
+      const cap = Math.floor(r.limit * (r.burst || 1));
+      const rate = r.limit / r.window;
+      st = st || (simState[path] = { tokens: cap, last: now });
+      st.tokens = Math.min(cap, st.tokens + (now - st.last) * rate);
+      st.last = now;
+      if (st.tokens >= 1) {
+        st.tokens -= 1;
+        return { status: 200, limit: r.limit, remaining: Math.floor(st.tokens), reset: Math.ceil(now + (cap - st.tokens) / rate) };
+      }
+      const retry = Math.ceil((1 - st.tokens) / rate);
+      return { status: 429, limit: r.limit, remaining: 0, reset: Math.ceil(now + retry), retry };
+    }
+
+    // leaky_bucket
+    const rate = r.limit / r.window;
+    st = st || (simState[path] = { queue: 0, last: now });
+    const leaked = Math.floor((now - st.last) * rate);
+    if (leaked > 0) { st.queue = Math.max(0, st.queue - leaked); st.last = now; }
+    if (st.queue < r.limit) {
+      st.queue++;
+      return { status: 200, limit: r.limit, remaining: r.limit - st.queue, reset: Math.ceil(now + st.queue / rate) };
+    }
+    return { status: 429, limit: r.limit, remaining: 0, reset: Math.ceil(now + 1 / rate), retry: Math.ceil(1 / rate) };
+  }
+
+  function updateDesc() { $("endpointDesc").textContent = descriptions[endpointSel.value]; }
+  endpointSel.addEventListener("change", updateDesc);
+  updateDesc();
+
+  function headersFor(path) {
+    const h = {};
+    if (path === "/demo/authenticated") h["Authorization"] = "Bearer " + DEMO_JWT;
+    if (path === "/demo/api-key") h["X-API-Key"] = "demo-key-123";
+    if (path === "/demo/tiered") { h["Authorization"] = "Bearer " + DEMO_JWT; h["X-User-Tier"] = "pro"; }
+    return h;
+  }
+
+  // Normalize a rate-limit result into a plain object, whether it came from
+  // the real API (fetch Response) or the client-side simulator.
+  function normalize(resp, path) {
+    if (resp instanceof Response) {
+      return {
+        status: resp.status,
+        limit: parseInt(resp.headers.get("x-ratelimit-limit") || "0"),
+        remaining: resp.headers.get("x-ratelimit-remaining"),
+        reset: resp.headers.get("x-ratelimit-reset"),
+        policy: resp.headers.get("x-ratelimit-policy"),
+        retry: resp.headers.get("retry-after"),
+      };
+    }
+    const r = RULES[path];
+    return {
+      status: resp.status,
+      limit: resp.limit,
+      remaining: String(resp.remaining),
+      reset: String(resp.reset),
+      policy: `${resp.limit};w=${r.window}`,
+      retry: resp.retry != null ? String(resp.retry) : null,
+    };
+  }
+
+  function renderHeaders(res) {
+    const rows = [
+      ["x-ratelimit-limit", res.limit || null],
+      ["x-ratelimit-remaining", res.remaining],
+      ["x-ratelimit-reset", res.reset],
+      ["x-ratelimit-policy", res.policy],
+      ["retry-after", res.retry],
+    ];
+    let html = "";
+    for (const [k, v] of rows) {
+      if (v !== null && v !== undefined && v !== "null")
+        html += `<div class="row"><span class="k">${k}</span><span class="v">${v}</span></div>`;
+    }
+    $("headers").innerHTML = html || '<div class="empty">No rate-limit headers returned</div>';
+
+    const limit = res.limit || 0;
+    const rem = parseInt(res.remaining || "0");
+    if (limit > 0) {
+      const pct = Math.max(0, Math.min(100, (rem / limit) * 100));
+      $("quotaFill").style.width = pct + "%";
+      $("quotaFill").style.background = pct > 50
+        ? "linear-gradient(90deg, var(--green), var(--yellow))"
+        : pct > 20 ? "var(--yellow)" : "var(--red)";
+      $("quotaText").textContent = rem + " / " + limit;
+    }
+  }
+
+  function addLog(status, path, rem) {
+    const log = $("log");
+    if (log.querySelector(".empty")) log.innerHTML = "";
+    const ok = status === 200;
+    const item = document.createElement("div");
+    item.className = "log-item " + (ok ? "ok" : "blocked");
+    const time = new Date().toLocaleTimeString();
+    item.innerHTML = `<span class="code">${status}</span>` +
+                     `<span class="path">${time} &middot; ${path}</span>` +
+                     `<span class="rem">${rem !== null ? "rem " + rem : ""}</span>`;
+    log.prepend(item);
+    while (log.children.length > 50) log.removeChild(log.lastChild);
+  }
+
+  function bumpStats(status) {
+    if (status === 200) allowed++; else if (status === 429) blocked++;
+    $("statAllowed").textContent = allowed;
+    $("statBlocked").textContent = blocked;
+    $("statTotal").textContent = allowed + blocked;
+  }
+
+  async function fire(path) {
+    let res;
+    if (backendLive) {
+      try {
+        const resp = await fetch(path, { headers: headersFor(path) });
+        res = normalize(resp, path);
+      } catch (e) {
+        backendLive = false;  // backend went away → fall back to simulator
+      }
+    }
+    if (!res) res = normalize(simulate(path), path);
+    renderHeaders(res);
+    addLog(res.status, path, res.remaining);
+    bumpStats(res.status);
+  }
+
+  // Detect whether the real backend is reachable; otherwise run in simulated mode.
+  async function detectBackend() {
+    const badge = $("modeBadge");
+    try {
+      const r = await fetch("/health", { method: "GET" });
+      if (r.ok) {
+        backendLive = true;
+        badge.textContent = "● Live backend connected";
+        badge.style.color = "var(--green)";
+        badge.style.borderColor = "var(--green)";
+        return;
+      }
+    } catch (e) { /* fall through */ }
+    backendLive = false;
+    badge.textContent = "● Simulated mode (no backend) — same algorithms, in your browser";
+    badge.style.color = "var(--yellow)";
+    badge.style.borderColor = "var(--yellow)";
+  }
+  detectBackend();
+
+  $("sendOne").addEventListener("click", () => fire(endpointSel.value));
+
+  $("sendBurst").addEventListener("click", async () => {
+    const n = Math.max(1, Math.min(200, parseInt($("burstCount").value) || 15));
+    const path = endpointSel.value;
+    $("sendBurst").disabled = true; $("sendOne").disabled = true;
+    // Fire concurrently to really stress the limiter
+    await Promise.all(Array.from({ length: n }, () => fire(path)));
+    $("sendBurst").disabled = false; $("sendOne").disabled = false;
+  });
+
+  $("reset").addEventListener("click", () => {
+    allowed = 0; blocked = 0;
+    $("statAllowed").textContent = "0";
+    $("statBlocked").textContent = "0";
+    $("statTotal").textContent = "0";
+    $("log").innerHTML = '<div class="empty">No requests yet</div>';
+    $("headers").innerHTML = '<div class="empty">Send a request to see rate-limit headers</div>';
+    $("quotaFill").style.width = "100%";
+    $("quotaText").textContent = "— / —";
+  });
+</script>
+</body>
+</html>

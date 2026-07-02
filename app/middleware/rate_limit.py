@@ -138,11 +138,12 @@ async def _log_violation(
         logger.exception("Failed to write audit log")
 
 
-def _attach_headers(response: Response, result: RateLimitResult, limit: int) -> None:
+def _attach_headers(response: Response, result: RateLimitResult, limit: int, window: int) -> None:
     response.headers["X-RateLimit-Limit"] = str(limit)
     response.headers["X-RateLimit-Remaining"] = str(max(0, result.remaining))
     response.headers["X-RateLimit-Reset"] = str(result.reset_at)
-    response.headers["X-RateLimit-Policy"] = f"{limit};w={result.reset_at}"
+    # IETF draft format: "<limit>;w=<window_seconds>"
+    response.headers["X-RateLimit-Policy"] = f"{limit};w={window}"
     if not result.allowed and result.retry_after > 0:
         response.headers["X-RateLimit-Retry-After"] = str(result.retry_after)
 
@@ -152,8 +153,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         settings = get_settings()
         path = request.url.path
 
-        # Skip rate limiting for internal/system paths
-        if any(path.startswith(skip) for skip in settings.skip_paths):
+        # Skip rate limiting for the dashboard root and internal/system paths.
+        # "/" is matched exactly (a prefix check on "/" would skip everything).
+        if path == "/" or any(path.startswith(skip) for skip in settings.skip_paths):
             return await call_next(request)
 
         client_ip = extract_client_ip(request)
@@ -255,11 +257,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                         },
                     )
                     resp.headers["Retry-After"] = str(rl_result.retry_after)
-                    _attach_headers(resp, rl_result, limit)
+                    _attach_headers(resp, rl_result, limit, window)
                     return resp
 
                 response = await call_next(request)
-                _attach_headers(response, rl_result, limit)
+                _attach_headers(response, rl_result, limit, window)
                 return response
 
         except Exception as exc:
